@@ -1923,6 +1923,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         // Send the rest of the chain
         if (pindex)
             pindex = chainActive.Next(pindex);
+
         int nLimit = 500;
         LogPrint(BCLog::NET, "getblocks %d to %s limit %d from peer=%d\n", (pindex ? pindex->nHeight : -1), hashStop.IsNull() ? "end" : hashStop.ToString(), nLimit, pfrom->GetId());
         for (; pindex; pindex = chainActive.Next(pindex))
@@ -2024,25 +2025,41 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             if (mi == mapBlockIndex.end())
                 return true;
             pindex = (*mi).second;
+ LogPrint(BCLog::NET, "debug getheaders - %d (pfrom->GetId():%d) hashStop=%s\n",  __LINE__, pfrom->GetId() , hashStop.GetHex() );
         }
         else
         {
+ LogPrint(BCLog::NET, "debug getheaders - %d (pfrom->GetId():%d) hashStop=%s\n",  __LINE__, pfrom->GetId() , hashStop.GetHex() );
+LogPrint(BCLog::NET, "getheaders %d to %s from peer=%d\n", (pindex ? pindex->nHeight : -1), hashStop.IsNull() ? "end" : hashStop.ToString(), pfrom->GetId());
+
             // Find the last block the caller has in the main chain
             pindex = FindForkInGlobalIndex(chainActive, locator);
+
+ //LogPrint(BCLog::NET, "debug GETHEADERS-FindForkInGlobalIndex()  chainActive.Height()=%d - hashStop.Height=%d ",  chainActive.Height(), pindex->nHeight  );
+
             if (pindex)
                 pindex = chainActive.Next(pindex);
+
         }
+
+ LogPrint(BCLog::NET, "debug Getheaders - %d (pfrom->GetId():%d) pindex.Height=%d\n",  __LINE__, pfrom->GetId(), pindex->nHeight );
 
         // we must use CBlocks, as CBlockHeaders won't include the 0x00 nTx count at the end
         std::vector<CBlock> vHeaders;
+ LogPrint(BCLog::NET, "debug Getheaders - %d (pfrom->GetId():%d) vHeaders.size()=%d\n",  __LINE__, pfrom->GetId(), vHeaders.size());
+
         int nLimit = MAX_HEADERS_RESULTS;
         LogPrint(BCLog::NET, "getheaders %d to %s from peer=%d\n", (pindex ? pindex->nHeight : -1), hashStop.IsNull() ? "end" : hashStop.ToString(), pfrom->GetId());
+
         for (; pindex; pindex = chainActive.Next(pindex))
         {
+
             vHeaders.push_back(pindex->GetBlockHeader());
             if (--nLimit <= 0 || pindex->GetBlockHash() == hashStop)
                 break;
         }
+ LogPrint(BCLog::NET, "debug getheaders - %d (pfrom->GetId():%d) nLimit=%d\n",  __LINE__, pfrom->GetId() , nLimit );
+
         // pindex can be nullptr either if we sent chainActive.Tip() OR
         // if our peer has chainActive.Tip() (and thus we are sending an empty
         // headers message). In both cases it's safe to update
@@ -3226,6 +3243,8 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
             }
         }
 
+        //LogPrint(BCLog::NET, "debug - getheaders (%d) to peer=%d (startheight:%d)\n",  nSyncStarted, pto->GetId(), pto->nStartingHeight);
+
         // Resend wallet transactions that haven't gotten in a block yet
         // Except during reindex, importing and IBD, when old wallet
         // transactions become unconfirmed and spams other nodes.
@@ -3250,8 +3269,13 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
             bool fRevertToInv = ((!state.fPreferHeaders &&
                                  (!state.fPreferHeaderAndIDs || pto->vBlockHashesToAnnounce.size() > 1)) ||
                                 pto->vBlockHashesToAnnounce.size() > MAX_BLOCKS_TO_ANNOUNCE);
+
+        //LogPrint(BCLog::NET, "debug1 - fPreferHeaders (%d) fPreferHeaderAndIDs=%d (vBlockHashesToAnnounce.size:%d)\n", state.fPreferHeaders, state.fPreferHeaderAndIDs, pto->vBlockHashesToAnnounce.size() );
+
             const CBlockIndex *pBestIndex = nullptr; // last header queued for delivery
             ProcessBlockAvailability(pto->GetId()); // ensure pindexBestKnownBlock is up-to-date
+
+        //LogPrint(BCLog::NET, "debug 2- fRevertToInv (%d) =tt (pto->GetId():%d)\n", fRevertToInv, pto->GetId() );
 
             if (!fRevertToInv) {
                 bool fFoundStartingHeader = false;
@@ -3293,15 +3317,19 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                         // Start sending headers.
                         fFoundStartingHeader = true;
                         vHeaders.push_back(pindex->GetBlockHeader());
+        LogPrint(BCLog::NET, "debug 4- fRevertToInv (%d) =tt (pto->GetId():%d)\n", fRevertToInv, pto->GetId() );
                     } else {
                         // Peer doesn't have this header or the prior one -- nothing will
                         // connect, so bail out.
+        LogPrint(BCLog::NET, "debug 6- fRevertToInv (%d) =tt (pto->GetId():%d)\n", fRevertToInv, pto->GetId() );
                         fRevertToInv = true;
                         break;
                     }
                 }
             }
+
             if (!fRevertToInv && !vHeaders.empty()) {
+        LogPrint(BCLog::NET, "debug 7- fRevertToInv (%d) =tt (pto->GetId():%d)\n", fRevertToInv, pto->GetId() );
                 if (vHeaders.size() == 1 && state.fPreferHeaderAndIDs) {
                     // We only send up to 1 block as header-and-ids, as otherwise
                     // probably means we're doing an initial-ish-sync or they're slow
@@ -3375,6 +3403,8 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
             }
             pto->vBlockHashesToAnnounce.clear();
         }
+
+    //LogPrint(BCLog::NET, "%s %s %d\n", __FILE__, __func__, __LINE__);
 
         //
         // Message: inventory
@@ -3510,6 +3540,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
         if (!vInv.empty())
             connman->PushMessage(pto, msgMaker.Make(NetMsgType::INV, vInv));
 
+ //LogPrint(BCLog::NET, "debug 9- %d (pto->GetId():%d)\n",  __LINE__, pto->GetId() );
         // Detect whether we're stalling
         nNow = GetTimeMicros();
         if (state.nStallingSince && state.nStallingSince < nNow - 1000000 * BLOCK_STALLING_TIMEOUT) {
@@ -3534,6 +3565,8 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
                 return true;
             }
         }
+
+//        LogPrint(BCLog::NET, "debug 10- %d (pto->GetId():%d)\n",  __LINE__, pto->GetId() );
         // Check for headers sync timeouts
         if (state.fSyncStarted && state.nHeadersSyncTimeout < std::numeric_limits<int64_t>::max()) {
             // Detect whether this is a stalling initial-headers-sync peer
@@ -3569,11 +3602,14 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
 
         // Check that outbound peers have reasonable chains
         // GetTime() is used by this anti-DoS logic so we can test this using mocktime
+//        LogPrint(BCLog::NET, "debug 11- %d (pto->GetId():%d)\n",  __LINE__, pto->GetId() );
         ConsiderEviction(pto, GetTime());
 
         //
         // Message: getdata (blocks)
         //
+//        LogPrint(BCLog::NET, "debug 12- %d (pto->GetId():%d)\n",  __LINE__, pto->GetId() );
+
         std::vector<CInv> vGetData;
         if (!pto->fClient && (fFetch || !IsInitialBlockDownload()) && state.nBlocksInFlight < MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
             std::vector<const CBlockIndex*> vToDownload;
@@ -3594,6 +3630,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
             }
         }
 
+//        LogPrint(BCLog::NET, "debug 13- %d (pto->GetId():%d)\n",  __LINE__, pto->GetId() );
         //
         // Message: getdata (non-blocks)
         //
@@ -3618,6 +3655,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
         if (!vGetData.empty())
             connman->PushMessage(pto, msgMaker.Make(NetMsgType::GETDATA, vGetData));
 
+//        LogPrint(BCLog::NET, "debug 14- %d (pto->GetId():%d)\n",  __LINE__, pto->GetId() );
         //
         // Message: feefilter
         //
@@ -3646,6 +3684,7 @@ bool PeerLogicValidation::SendMessages(CNode* pto, std::atomic<bool>& interruptM
             }
         }
     }
+ //       LogPrint(BCLog::NET, "debug 15- %d (pto->GetId():%d)\n",  __LINE__, pto->GetId() );
     return true;
 }
 

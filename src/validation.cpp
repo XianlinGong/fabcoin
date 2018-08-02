@@ -182,19 +182,32 @@ namespace {
 
 CBlockIndex* FindForkInGlobalIndex(const CChain& chain, const CBlockLocator& locator)
 {
+    
     // Find the first block the caller has in the main chain
+    LogPrint(BCLog::MEMPOOL, "debug FindForkInGlobalIndex() start from chain.Height() line=%d chain.height=%d vhave.size=%d \n", __LINE__, chain.Height(), locator.vHave.size());
+
     for (const uint256& hash : locator.vHave) {
         BlockMap::iterator mi = mapBlockIndex.find(hash);
+        
+        LogPrint(BCLog::MEMPOOL, "debug FindForkInGlobalIndex() chain.Height() line=%d chain.Height=%d hash=%s \n", __LINE__, chain.Height(), hash.GetHex());
+
         if (mi != mapBlockIndex.end())
         {
+
             CBlockIndex* pindex = (*mi).second;
-            if (chain.Contains(pindex))
+
+            if (chain.Contains(pindex)){
+    LogPrint(BCLog::MEMPOOL, "debug FindForkInGlobalIndex() chain contains pindex line=%d chain.Height()=%d Contains - nHeight=%d \n", __LINE__, chain.Height(), pindex->nHeight);
                 return pindex;
+            }
             if (pindex->GetAncestor(chain.Height()) == chain.Tip()) {
+    LogPrint(BCLog::MEMPOOL, "debug FindForkInGlobalIndex() GetAncestor line=%d chain.Height()=%d pindex->nHeight=%d \n", __LINE__, chain.Height(), pindex->nHeight);
                 return chain.Tip();
             }
         }
     }
+
+
     return chain.Genesis();
 }
 
@@ -2127,7 +2140,7 @@ bool static DisconnectTip(CValidationState& state, const CChainParams& chainpara
         bool flushed = view.Flush();
         assert(flushed);
     }
-    LogPrint(BCLog::BENCH, "- Disconnect block: %.2fms\n", (GetTimeMicros() - nStart) * 0.001);
+    LogPrint(BCLog::BENCH, "DisconnectTip() - Disconnect block: %.2fms\n", (GetTimeMicros() - nStart) * 0.001);
     // Write the chain state to disk, if necessary.
     if (!FlushStateToDisk(chainparams, state, FLUSH_STATE_IF_NEEDED))
         return false;
@@ -2364,18 +2377,28 @@ static bool ActivateBestChainStep(CValidationState& state, const CChainParams& c
     const CBlockIndex *pindexOldTip = chainActive.Tip();
     const CBlockIndex *pindexFork = chainActive.FindFork(pindexMostWork);
 
+    LogPrintf("debug - pindexOldTip () : %d\n ", __LINE__);
+    //LogPrintf("debug - pindexOldTip () : %d\n ", pindexOldTip->nHeight   );
+    //LogPrintf("debug - pindexFork () : %d.\n", pindexFork->nHeight   );
+
     // Disconnect active blocks which are no longer in the best chain.
     bool fBlocksDisconnected = false;
+    int chainDisconnected =0;
     DisconnectedBlockTransactions disconnectpool;
     while (chainActive.Tip() && chainActive.Tip() != pindexFork) {
+        chainDisconnected ++;  //?????????????
         if (!DisconnectTip(state, chainparams, &disconnectpool)) {
             // This is likely a fatal error, but keep the mempool consistent,
             // just in case. Only remove from the mempool in this case.
             UpdateMempoolForReorg(disconnectpool, false);
             return false;
         }
+     
         fBlocksDisconnected = true;
     }
+
+    LogPrintf("debug - ActivateBestChainStep() : %i blocks is disconnected.\n", chainDisconnected );
+
 
     // Build list of new blocks to connect.
     std::vector<CBlockIndex*> vpindexToConnect;
@@ -2471,6 +2494,8 @@ bool ActivateBestChain(CValidationState &state, const CChainParams& chainparams,
     // us in the middle of ProcessNewBlock - do not assume pblock is set
     // sanely for performance or correctness!
 
+    LogPrint(BCLog::NET, "%s %s %d\n", __FILE__, __func__, __LINE__);
+
     CBlockIndex *pindexMostWork = nullptr;
     CBlockIndex *pindexNewTip = nullptr;
     int nStopAtHeight = gArgs.GetArg("-stopatheight", DEFAULT_STOPATHEIGHT);
@@ -2479,11 +2504,14 @@ bool ActivateBestChain(CValidationState &state, const CChainParams& chainparams,
         if (ShutdownRequested())
             break;
 
+    LogPrint(BCLog::NET, "%s %s %d\n", __FILE__, __func__, __LINE__);
+
         const CBlockIndex *pindexFork;
         bool fInitialDownload;
         {
             LOCK(cs_main);
             ConnectTrace connectTrace(mempool); // Destructed before cs_main is unlocked
+    LogPrint(BCLog::NET, "%s %s %d\n", __FILE__, __func__, __LINE__);
 
             CBlockIndex *pindexOldTip = chainActive.Tip();
             if (pindexMostWork == nullptr) {
@@ -2496,6 +2524,7 @@ bool ActivateBestChain(CValidationState &state, const CChainParams& chainparams,
 
             bool fInvalidFound = false;
             std::shared_ptr<const CBlock> nullBlockPtr;
+    LogPrint(BCLog::NET, "%s %s %d\n", __FILE__, __func__, __LINE__);
             if (!ActivateBestChainStep(state, chainparams, pindexMostWork, pblock && pblock->GetHash() == pindexMostWork->GetBlockHash() ? pblock : nullBlockPtr, fInvalidFound, connectTrace))
                 return false;
 
@@ -2507,12 +2536,14 @@ bool ActivateBestChain(CValidationState &state, const CChainParams& chainparams,
             pindexFork = chainActive.FindFork(pindexOldTip);
             fInitialDownload = IsInitialBlockDownload();
 
+    LogPrint(BCLog::NET, "%s %s %d\n", __FILE__, __func__, __LINE__);
             for (const PerBlockConnectTrace& trace : connectTrace.GetBlocksConnected()) {
                 assert(trace.pblock && trace.pindex);
                 GetMainSignals().BlockConnected(trace.pblock, trace.pindex, *trace.conflictedTxs);
             }
         }
         // When we reach this point, we switched to a new tip (stored in pindexNewTip).
+    LogPrint(BCLog::NET, "%s %s %d\n", __FILE__, __func__, __LINE__);
 
         // Notifications/callbacks that can run without cs_main
 
